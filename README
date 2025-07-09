@@ -1,0 +1,153 @@
+# HTTP/HTTPS Traffic Mirror
+
+A Go application that captures HTTP traffic from a network interface and mirrors it to HTTP or HTTPS endpoints.
+
+## Features
+
+- **Protocol Support**: Automatically forwards to both HTTP and HTTPS endpoints
+- **Traffic Sampling**: Forward a percentage of traffic (0-100%)
+- **Selective Forwarding**: Filter traffic by HTTP header or client IP address
+- **Host Header Preservation**: Option to maintain original Host header
+- **AWS NLB Health Checks**: Built-in TCP listener on port 4789
+- **X-Forwarded Headers**: Properly sets X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Port, and X-Forwarded-Host
+- **TLS Configuration**: Support for custom timeouts and certificate verification
+
+## Installation
+
+```bash
+go mod init traffic-mirror-app
+go mod tidy
+go build -o traffic-mirror main.go
+```
+
+## Usage
+
+### Basic Usage
+
+**Forward all HTTP traffic to an HTTPS endpoint:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com"
+```
+
+**Forward to an HTTP endpoint:**
+
+```bash
+sudo ./traffic-mirror -destination="http://internal-api.example.com"
+```
+
+### Command Line Flags
+
+| Flag                  | Type     | Default  | Description                                                                               |
+|-----------------------|----------|----------|-------------------------------------------------------------------------------------------|
+| -destination          | string   | required | Target endpoint URL (http:// or https://). If no protocol specified, defaults to https:// |
+| -percentage           | float64  | 100      | Percentage of requests to forward (0-100)                                                 |
+| -percentage-by        | string   | ""       | Forward based on: "header" or "remoteaddr"                                                |
+| -percentage-by-header | string   | ""       | Header name when using percentage-by=header                                               |
+| -filter-request-port  | int      | 80       | Capture traffic on this port                                                              |
+| -keep-host-header     | bool     | false    | Preserve original Host header                                                             |
+| -tls-insecure         | bool     | false    | Skip TLS certificate verification                                                         |
+| -http-timeout         | duration | 30s      | HTTP client timeout                                                                       |
+
+### Examples
+
+**Forward 50% of traffic randomly:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com" -percentage=50
+```
+
+**Forward traffic from 25% of users based on IP:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com" -percentage=25 -percentage-by=remoteaddr
+```
+
+**Forward traffic based on a header value:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com" -percentage=30 -percentage-by=header -percentage-by-header="X-User-ID"
+```
+
+**Capture HTTPS traffic (port 443) and forward:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com" -filter-request-port=443
+```
+
+**Forward with original Host header:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com" -keep-host-header
+```
+
+**Skip TLS verification for testing:**
+
+```bash
+sudo ./traffic-mirror -destination="https://self-signed.example.com" -tls-insecure
+```
+
+**Custom timeout:**
+
+```bash
+sudo ./traffic-mirror -destination="https://api.example.com" -http-timeout=60s
+```
+
+## How It Works
+
+1. **Packet Capture**: Uses libpcap to capture TCP packets on the vxlan0 interface
+2. **TCP Assembly**: Reassembles TCP streams to extract HTTP requests
+3. **Request Parsing**: Parses HTTP requests including headers and body
+4. **Percentage Filtering**:
+   - Random: Uses cryptographically secure random sampling
+   - By Header/IP: Uses consistent hashing (CRC64) for deterministic sampling
+5. **Request Forwarding**: Creates new HTTP/HTTPS requests to the destination
+6. **Header Management**: Adds proper X-Forwarded-* headers for proxy awareness
+
+## Requirements
+
+- Root/sudo access (for packet capture)
+- vxlan0 network interface
+- libpcap installed
+- Go 1.16 or higher
+
+## AWS Network Load Balancer Integration
+
+The application listens on TCP port 4789 for health checks. This allows it to work behind an AWS NLB. The health check endpoint immediately closes connections without processing.
+
+## Security Considerations
+
+- Always use HTTPS endpoints in production
+- The `-tls-insecure` flag should only be used for testing
+- Ensure proper network isolation when capturing traffic
+- Be aware of privacy implications when forwarding traffic
+
+## Performance
+
+- Uses connection pooling for efficient HTTPS connections
+- Concurrent request forwarding with goroutines
+- TCP assembly timeout of 1 minute to prevent memory leaks
+- Configurable HTTP client timeout
+
+## Limitations
+
+- Only captures traffic on vxlan0 interface
+- Only supports HTTP/1.x traffic (not HTTP/2 or HTTP/3)
+- Request body is fully buffered in memory
+
+## Testing
+
+Run the test suite:
+
+```bash
+go test -v
+```
+
+The tests cover:
+- Protocol detection and URL formatting
+- Percentage calculation consistency
+- HTTP client configuration
+- Request forwarding with proper headers
+- Host header preservation
+- Input validation
+- Random seed generation
