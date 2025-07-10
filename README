@@ -24,6 +24,13 @@ go build -o traffic-mirror main.go
 
 ### Basic Usage
 
+**Open vxlan0 interface on linux instance**
+
+```bash
+sudo ip link add vxlan0 type vxlan id {VNI} dev {Listening Interface} dstport 4789
+sudo ip link set vxlan0 up
+```
+
 **Forward all HTTP traffic to an HTTPS endpoint:**
 
 ```bash
